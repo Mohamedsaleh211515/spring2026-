@@ -1,7 +1,6 @@
 use std::time::Instant;
 
 pub struct SystemState {
-    pub shutdown: bool,
     pub active_workers: usize,
     pub cpu_in_use: f64,
     pub finished_tasks: usize,
@@ -14,7 +13,6 @@ pub struct SystemState {
 impl SystemState {
     pub fn new(total_tasks: usize) -> Self {
         Self {
-            shutdown: false,
             active_workers: 0,
             cpu_in_use: 0.0,
             finished_tasks: 0,
