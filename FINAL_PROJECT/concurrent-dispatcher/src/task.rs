@@ -10,27 +10,27 @@ pub enum TaskKind {
 pub struct Task {
     pub id: usize,
     pub arrival_time: Instant,
-    pub start_time: Option<Instant>, // wait time
+    pub start_time: Option<Instant>,
     pub kind: TaskKind,
 }
 
 impl Task {
-    // fixed execution time model
     pub fn duration(&self) -> Duration {
-        Duration::from_millis(200)
-    }
-
-    // used by scheduler/metrics
-    pub fn cpu_cost(&self) -> f64 {
         match self.kind {
-            TaskKind::CPU => 0.35,
-            TaskKind::IO => 0.10,
+            TaskKind::CPU => Duration::from_millis(350),
+            TaskKind::IO => Duration::from_millis(100),
         }
     }
 
     pub fn wait_time(&self) -> Option<u128> {
         self.start_time.map(|start| {
             start.duration_since(self.arrival_time).as_millis()
+        })
+    }
+
+    pub fn turnaround_time(&self) -> Option<u128> {
+        self.start_time.map(|start| {
+            start.elapsed().as_millis()
         })
     }
 }

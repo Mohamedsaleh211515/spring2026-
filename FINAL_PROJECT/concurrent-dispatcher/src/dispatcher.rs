@@ -15,7 +15,7 @@ pub fn run_dispatcher(
     let mut io_queue: VecDeque<Task> = VecDeque::new();
 
     // used for round-robin fairness between IO and CPU
-    let mut pick_io = false;
+   // let mut pick_io = false;
 
     loop {
         // 1. Pull incoming tasks (non-blocking)
@@ -35,21 +35,13 @@ pub fn run_dispatcher(
         }
 
         // 3. Select next task fairly
-        let next_task = match (!cpu_queue.is_empty(), !io_queue.is_empty()) {
-            (true, true) => {
-                pick_io = !pick_io;
-
-                if pick_io {
-                    io_queue.pop_front()
-                } else {
-                    cpu_queue.pop_front()
-                }
-            }
-            (true, false) => cpu_queue.pop_front(),
-            (false, true) => io_queue.pop_front(),
-            (false, false) => None,
+        let next_task = if !cpu_queue.is_empty() {
+            cpu_queue.pop_front()
+        } else if !io_queue.is_empty() {
+            io_queue.pop_front()
+        } else {
+            None
         };
-
         // 4. Dispatch task to shared execution queue
         if let Some(task) = next_task {
             if let Ok(mut q) = queue.lock() {

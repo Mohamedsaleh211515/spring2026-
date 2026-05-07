@@ -1,9 +1,10 @@
-use crate::state::SystemState;
-use crate::task::Task;
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::Instant;
+use std::collections::VecDeque;
+
+use crate::state::SystemState;
+use crate::task::{Task, TaskKind};
 
 pub fn start_worker(
     id: usize,
@@ -12,61 +13,94 @@ pub fn start_worker(
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         loop {
-            // Try to fetch a task (lock kept very short)
+
+            // -------------------------
+            // Fetch task
+            // -------------------------
             let task = {
                 let mut q = queue.lock().unwrap();
                 q.pop_front()
             };
 
-            match task {
-                Some(mut task) => {
-                    let start = std::time::Instant::now();
-                    task.start_time = Some(start);
+            // -------------------------
+            // Exit condition
+            // -------------------------
+            if task.is_none() {
+                let s = state.lock().unwrap();
+                if s.finished_tasks >= s.total_tasks {
+                    break;
+                }
+                drop(s);
+                thread::sleep(std::time::Duration::from_millis(1));
+                continue;
+            }
 
-                    // Update active worker state
-                    {
-                        let mut s = state.lock().unwrap();
-                        s.active_workers += 1;
-                        s.cpu_in_use = (s.cpu_in_use + task.cpu_cost()).min(1.0);
-                    }
+            let mut task = task.unwrap();
 
-                    println!("Worker {} running task {}", id, task.id);
+            task.start_time = Some(Instant::now());
 
-                    // Simulate work
-                    thread::sleep(task.duration());
+            // -------------------------
+            // TRACE OUTPUT (WHAT YOU WANTED)
+            // -------------------------
+            println!(
+                "Worker {} → Task {} ({:?}) START",
+                id,
+                task.id,
+                task.kind
+            );
 
-                    // Update completion state
-                    let mut s = state.lock().unwrap();
+            // mark active
+            {
+                let mut s = state.lock().unwrap();
+                s.active_workers += 1;
+            }
 
-                    if let Some(wait) = task.wait_time() {
-                        s.total_wait_time += wait;
-                    }
+            // simulate work
+            thread::sleep(task.duration());
 
-                    s.finished_tasks += 1;
-                    s.active_workers -= 1;
-                    s.cpu_in_use = (s.cpu_in_use - task.cpu_cost()).max(0.0);
+            // mark inactive
+            {
+                let mut s = state.lock().unwrap();
+                s.active_workers -= 1;
+            }
 
-                    // Exit condition
-                    if s.finished_tasks >= s.total_tasks {
-                        break;
-                    }
+            println!(
+                "Worker {} → Task {} ({:?}) FINISH",
+                id,
+                task.id,
+                task.kind
+            );
+
+            // -------------------------
+            // Update state
+            // -------------------------
+            let mut s = state.lock().unwrap();
+
+            if let Some(wait) = task.wait_time() {
+                let wait = wait as u128;
+
+                s.total_wait_time += wait;
+
+                if wait > s.max_wait_time {
+                    s.max_wait_time = wait;
                 }
 
-                None => {
-                    // Check if we're done
-                    let done = {
-                        let s = state.lock().unwrap();
-                        s.finished_tasks >= s.total_tasks
-                    };
-
-                    if done {
-                        break;
-                    }
-
-                    // Avoid busy waiting
-                    thread::sleep(Duration::from_millis(5));
+                match task.kind {
+                    TaskKind::IO => s.total_io_wait_time += wait,
+                    TaskKind::CPU => s.total_cpu_wait_time += wait,
                 }
             }
+
+            if let Some(turn) = task.turnaround_time() {
+                s.total_turnaround_time += turn;
+            }
+
+            match task.kind {
+                TaskKind::CPU => s.cpu_completed += 1,
+                TaskKind::IO => s.io_completed += 1,
+            }
+
+            s.finished_tasks += 1;
         }
     })
 }

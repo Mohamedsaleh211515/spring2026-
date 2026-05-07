@@ -17,14 +17,31 @@ pub fn start_monitor(
         loop {
             thread::sleep(Duration::from_millis(10));
 
-            let s = state.lock().unwrap();
+            // -------------------------
+            // Read shared state once
+            // -------------------------
+            let (workers, finished, total) = {
+                let s = state.lock().unwrap();
+                (s.active_workers, s.finished_tasks, s.total_tasks)
+            };
 
+            // -------------------------
+            // Derived CPU usage (IMPORTANT FIX)
+            // -------------------------
+            let cpu_usage = workers as f64 / 8.0; // 8 worker threads
+
+            // -------------------------
+            // Store snapshot
+            // -------------------------
             snapshots.lock().unwrap().push(Snapshot {
-                cpu: s.cpu_in_use,
-                workers: s.active_workers,
+                cpu: cpu_usage,
+                workers,
             });
 
-            if s.finished_tasks >= s.total_tasks {
+            // -------------------------
+            // Stop condition
+            // -------------------------
+            if finished >= total {
                 break;
             }
         }
